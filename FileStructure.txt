@@ -1,0 +1,28 @@
+lottery-optimizer/
+├── config/
+│   ├── __init__.py
+│   └── defaults.py
+├── core/
+│   ├── __init__.py
+│   ├── analysis.py
+│   ├── optimizer.py
+│   └── validator.py
+├── data/
+│   ├── archive/
+│   ├── results/
+│   └── stats/
+├── scripts/
+│   ├── migrate.sh
+│   ├── reset_testdata.sh
+│   ├── setup_env.sh
+│   └── update_requirements.sh
+├── tests/
+│   ├── __init__.py
+│   ├── test_analysis.py
+│   ├── test_optimizer.py
+│   └── test_validator.py
+├── .gitignore
+├── bootstrap.py
+├── cli.py
+├── config.yaml
+└── requirements.txt
