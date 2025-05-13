@@ -79,10 +79,6 @@ class HistoricalAnalyzer:
                 f"- Second column: numbers as 1-2-3-4-5-6\n"
                 f"Example:\n01/01/2020,5-10-15-20-25-30"
             )
-Debugging Steps:
-
-
-
 
     def run(self, test_draws=None):
         test_draws = test_draws or self.config['validation']['test_draws']
