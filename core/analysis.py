@@ -20,24 +20,69 @@ class HistoricalAnalyzer:
         with open(config_path, 'r') as f:
             return yaml.safe_load(f)
     
+    def _validate_data_file(self, path):
+        """Thorough file validation before pandas attempts reading"""
+        path = Path(path)
+        
+        # 1. File existence
+        if not path.exists():
+            raise ValueError(f"File does not exist: {path}")
+        
+        # 2. File size check
+        if path.stat().st_size == 0:
+            raise ValueError(f"File is empty: {path}")
+        
+        # 3. Read first line for content check
+        with open(path, 'r') as f:
+            first_line = f.readline().strip()
+            if not first_line:
+                raise ValueError(f"First line is empty in: {path}")
+            
+            # 4. Verify delimiter
+            if ',' not in first_line:
+                raise ValueError(f"No comma delimiter found in first line: {first_line}")
+        
+        return True
+
     def _load_data(self):
         num_select = self.config['strategy']['numbers_to_select']
         self.num_cols = [f'n{i+1}' for i in range(num_select)]
         
         try:
+            self._validate_data_file(self.config['data']['historical_path'])
+            
             self.historical = pd.read_csv(
                 self.config['data']['historical_path'],
                 header=None if not self.config['data']['has_header'] else 0,
-                names=['date', 'numbers']
+                names=['date', 'numbers'],
+                on_bad_lines='error'    
             )
+            
+            if len(self.historical) == 0:
+                raise ValueError("File has header but no data rows")
+
             self.historical[self.num_cols] = self.historical['numbers'].str.split('-', expand=True).astype(int)
             self.historical['date'] = pd.to_datetime(
                 self.historical['date'], 
                 format=self.config['data']['date_format']
             )
             self.number_pool = list(range(1, self.config['strategy']['number_pool'] + 1))
+
         except Exception as e:
-            raise ValueError(f"Data loading failed: {str(e)}")
+        # Enhanced error context
+        raise ValueError(
+            f"Failed to load {self.config['data']['historical_path']}\n"
+            f"Error: {str(e)}\n"
+            f"File must be:\n"
+            f"- Comma-delimited\n"
+            f"- First column: dates\n"
+            f"- Second column: numbers as 1-2-3-4-5-6\n"
+            f"Example:\n01/01/2020,5-10-15-20-25-30"
+        )
+Debugging Steps:
+
+
+
 
     def run(self, test_draws=None):
         test_draws = test_draws or self.config['validation']['test_draws']
