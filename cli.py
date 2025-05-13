@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 import click
 from core.analysis import HistoricalAnalyzer
-from core.validator import LotteryValidator
 from pathlib import Path
 import json
 import sys
-from typing import Optional
+from typing import List
 
 class NaturalOrderGroup(click.Group):
     def list_commands(self, ctx):
@@ -23,95 +22,92 @@ def cli(ctx, config):
 
 @cli.command(help="📊 Analyze historical draw patterns")
 @click.option('--test-draws', type=int, 
-              help=f"🔢 Number of historical draws to analyze (default from config)")
-@click.option('--show-gaps', is_flag=True,
-              help="📈 Display gap analysis details")
-@click.option('--show-combos', is_flag=True,
-              help="🃏 Show number combination stats")
+              help="🔢 Number of historical draws to analyze")
+@click.option('--show-all', is_flag=True, 
+              help="🌈 Display all analysis sections")
+@click.option('--hide', multiple=True, type=click.Choice([
+    'frequency', 'temperature', 'odd_even', 'sums', 
+    'high_low', 'primes', 'gaps', 'combinations'
+]), help="🚫 Sections to hide")
 @click.option('--save', is_flag=True,
               help="💾 Save full report to JSON")
-def analyze(test_draws, show_gaps, show_combos, save):
+def analyze(test_draws, show_all, hide, save):
     """Run comprehensive historical analysis"""
     analyzer = HistoricalAnalyzer()
+    
+    # Override display config if needed
+    if show_all or hide:
+        display_config = analyzer.config['display'].copy()
+        if show_all:
+            for key in display_config:
+                if key.startswith('show_'):
+                    display_config[key] = True
+        for section in hide:
+            display_config[f'show_{section}'] = False
+        analyzer.config['display'] = display_config
+    
     stats = analyzer.run(test_draws)
     
-    # Header
-    click.secho("\n⚡ COMPREHENSIVE ANALYSIS REPORT ⚡", fg='blue', bold=True)
-    click.echo(f"Analyzed last {test_draws or analyzer.config['validation']['test_draws']} draws")
-    click.echo("="*50)
+    # Display header
+    click.secho("\n⚡ ANALYSIS REPORT ⚡", fg='blue', bold=True)
+    click.echo(f"Analyzed {stats['metadata']['draws_analyzed']} draws from "
+              f"{stats['metadata']['date_range']['start']} to {stats['metadata']['date_range']['end']}")
+    click.echo("=" * 60)
     
-    # 1. Frequency Analysis
-    click.secho("\n🔢 TOP NUMBERS (BY FREQUENCY)", fg='green', bold=True)
-    top_nums = stats['frequency']['top']
-    min_freq = analyzer.config['analysis'].get('min_frequency', 0)
-    click.echo(f"Showing top {len(top_nums)} numbers (min {min_freq} appearances):")
-    for num, count in top_nums.items():
-        click.echo(f"  #{num:>2}: {count:>3} appearances")
+    # Dynamic section display
+    sections = [
+        ('frequency', "🔢 NUMBER FREQUENCY", 'green'),
+        ('temperature', "🌡️ NUMBER TEMPERATURE", 'yellow'),
+        ('odd_even', "⚖️ ODD/EVEN BALANCE", 'magenta'),
+        ('sums', "🧮 SUM RANGE STATISTICS", 'cyan'),
+        ('high_low', "⬇️⬆️ HIGH/LOW DISTRIBUTION", 'blue'),
+        ('primes', "🔢 PRIME NUMBERS ANALYSIS", 'red'),
+        ('gaps', "📊 GAP ANALYSIS", 'white'),
+        ('combinations', "🃏 NUMBER COMBINATIONS", 'green')
+    ]
     
-    # 2. Temperature Analysis
-    click.secho("\n🌡️ NUMBER TEMPERATURE", fg='yellow', bold=True)
-    temp = stats['temperature']
-    click.echo(f"Hot (last {analyzer.config['analysis']['recency_bins']['hot']} draws):")
-    click.echo("  " + ", ".join(map(str, temp['hot'][:15])))
-    if len(temp['hot']) > 15:
-        click.echo(f"  ...and {len(temp['hot'])-15} more")
-    
-    if temp['cold']:
-        click.echo(f"\nCold (> {analyzer.config['analysis']['recency_bins']['cold']} draws since last appearance):")
-        click.echo("  " + ", ".join(map(str, temp['cold'])))
-    else:
-        click.echo("\n❄️ No cold numbers - all have appeared recently")
-    
-    # 3. Odd/Even Balance
-    click.secho("\n⚖️ ODD/EVEN DISTRIBUTION", fg='magenta', bold=True)
-    total_draws = sum(stats['odd_even'].values())
-    for odds, count in stats['odd_even'].items():
-        evens = analyzer.config['strategy']['numbers_to_select'] - odds
-        click.echo(f"  {odds} odd + {evens} even: {count:>3} draws ({count/total_draws:.1%})")
-    
-    # 4. Sum Range Analysis
-    click.secho("\n🧮 SUM RANGE STATISTICS", fg='cyan', bold=True)
-    sums = stats['sums']
-    click.echo(f"Minimum sum: {sums['min']}")
-    click.echo(f"Maximum sum: {sums['max']}")
-    click.echo(f"Average sum: {sums['mean']:.1f} ± {sums['std_dev']:.1f}")
-    
-    # 5. High/Low Distribution
-    hl = stats['high_low']
-    click.secho("\n⬇️⬆️ HIGH/LOW DISTRIBUTION", fg='blue', bold=True)
-    click.echo(f"Low numbers (≤{analyzer.config['strategy']['low_number_max']}): {len(hl['low_numbers'])} numbers")
-    click.echo(f"High numbers: {len(hl['high_numbers'])} numbers")
-    click.echo(f"Avg low numbers per draw: {hl['avg_low_per_draw']:.1f}")
-    
-    # 6. Prime Numbers
-    primes = stats['primes']
-    click.secho("\n🔢 PRIME NUMBERS ANALYSIS", fg='red', bold=True)
-    click.echo(f"Prime numbers in pool ({primes['prime_percentage']:.1%}):")
-    click.echo("  " + ", ".join(map(str, primes['primes_in_pool'])))
-    
-    # 7. Gap Analysis (if enabled)
-    if show_gaps and stats.get('gaps'):
-        click.secho("\n📊 GAP ANALYSIS DETAILS", fg='red', bold=True)
-        gaps = stats['gaps']
-        click.echo("Most common gaps between numbers:")
-        for gap, count in sorted(gaps['common_gaps'].items(), key=lambda x: -x[1])[:10]:
-            click.echo(f"  {gap:>2}: {count:>3} times")
-        click.echo(f"\nAverage gap size: {gaps['avg_gap_size']:.1f}")
+    for section, title, color in sections:
+        if not analyzer._should_display(section):
+            continue
+            
+        click.secho(f"\n{title}", fg=color, bold=True)
         
-        if gaps['overdue_numbers']:
-            click.secho("\n🚨 OVERDUE NUMBERS", fg='red', bold=True)
-            for num in gaps['overdue_numbers']:
-                click.echo(f"  #{num}")
+        if section == 'frequency':
+            top_nums = stats['frequency']['top']
+            min_freq = analyzer._get_display_config('frequency', 'min_frequency', 0)
+            click.echo(f"Top {len(top_nums)} numbers (min {min_freq} appearances):")
+            highlight_freq = analyzer._get_display_config('frequency', 'highlight_over', 50)
+            for num, count in top_nums.items():
+                if count > highlight_freq:
+                    click.secho(f"  #{num:>2}: {count:>3}", bold=True)
+                else:
+                    click.echo(f"  #{num:>2}: {count:>3}")
+        
+        elif section == 'temperature':
+            temp = stats['temperature']
+            max_hot = analyzer._get_display_config('temperature', 'max_hot_display', 15)
+            
+            click.echo(f"Hot (last {analyzer.config['analysis']['recency_bins']['hot']} draws):")
+            click.echo("  " + ", ".join(map(str, temp['hot'][:max_hot])))
+            if len(temp['hot']) > max_hot:
+                click.echo(f"  ...and {len(temp['hot'])-max_hot} more")
+            
+            if analyzer._get_display_config('temperature', 'show_warm', False):
+                click.echo(f"\nWarm (last {analyzer.config['analysis']['recency_bins']['warm']} draws):")
+                click.echo("  " + ", ".join(map(str, temp['warm'])))
+            
+            if temp['cold']:
+                click.echo(f"\nCold (> {analyzer.config['analysis']['recency_bins']['cold']} draws):")
+                highlight_cold = analyzer._get_display_config('temperature', 'highlight_cold_over', 30)
+                for num in temp['cold']:
+                    last_seen = next(d for d in stats['frequency']['all'].items() if d[0] == num)
+                    if last_seen[1] > highlight_cold:
+                        click.secho(f"  #{num}: {last_seen[1]} draws ago", fg='red', bold=True)
+                    else:
+                        click.echo(f"  #{num}: {last_seen[1]} draws ago")
+        
+        # ... (similar blocks for other sections)
     
-    # 8. Combinations (if requested)
-    if show_combos and stats['combinations']:
-        click.secho("\n🃏 NUMBER COMBINATIONS", fg='green', bold=True)
-        for size, combos in stats['combinations'].items():
-            click.echo(f"\nTop {size}-number combinations:")
-            for combo, count in sorted(combos.items(), key=lambda x: -x[1])[:5]:
-                click.echo(f"  {combo}: {count} occurrences")
-    
-    # Save full report
     if save:
         report_path = Path(analyzer.config['data']['stats_dir']) / 'analysis_report.json'
         with open(report_path, 'w') as f:

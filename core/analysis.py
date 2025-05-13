@@ -44,6 +44,13 @@ class HistoricalAnalyzer:
         test_data = self.historical.iloc[-test_draws:] if test_draws else self.historical
         
         stats = {
+            'metadata': {
+                'draws_analyzed': len(test_data),
+                'date_range': {
+                    'start': test_data['date'].min().strftime('%Y-%m-%d'),
+                    'end': test_data['date'].max().strftime('%Y-%m-%d')
+                }
+            },
             'frequency': self._get_frequency_stats(test_data),
             'temperature': self._get_temperature_stats(test_data),
             'combinations': self._get_serializable_combinations(test_data),
@@ -57,13 +64,22 @@ class HistoricalAnalyzer:
         self._save_report(stats)
         return stats
     
+    def _should_display(self, section):
+        """Check if a section should be displayed"""
+        return self.config['display'].get(f'show_{section}', False)
+    
+    def _get_display_config(self, section, key, default=None):
+        """Get display configuration value"""
+        return self.config['display'].get(section, {}).get(key, default)
+
     def _get_frequency_stats(self, data):
         freq = data[self.num_cols].stack().value_counts()
-        min_freq = self.config['analysis'].get('min_frequency', 0)
+        min_freq = self._get_display_config('frequency', 'min_frequency', 0)
         filtered = freq[freq >= min_freq]
         return {
-            'top': filtered.head(self.config['analysis']['top_range']).to_dict(),
-            'all': freq.to_dict()
+            'top': filtered.head(self._get_display_config('frequency', 'top_range', 10)).to_dict(),
+            'all': freq.to_dict(),
+            'min_frequency': min_freq
         }
     
     def _get_temperature_stats(self, data):
@@ -86,7 +102,8 @@ class HistoricalAnalyzer:
         return {
             'primes_in_pool': primes,
             'prime_frequency': {p: freq.get(p, 0) for p in primes},
-            'prime_percentage': len(primes) / len(self.number_pool)
+            'prime_percentage': len(primes) / len(self.number_pool),
+            'highlight_threshold': self._get_display_config('primes', 'highlight_over', 10)
         }
     
     def _get_high_low_stats(self, data):
@@ -95,10 +112,14 @@ class HistoricalAnalyzer:
             'low_numbers': [n for n in self.number_pool if n <= low_max],
             'high_numbers': [n for n in self.number_pool if n > low_max],
             'avg_low_per_draw': data[self.num_cols].apply(
-                lambda x: sum(1 for n in x if n <= low_max), axis=1).mean()
+                lambda x: sum(1 for n in x if n <= low_max), axis=1).mean(),
+            'low_cutoff': low_max
         }
     
     def _get_serializable_combinations(self, data):
+        if not self._should_display('combinations'):
+            return None
+            
         combo_data = self._get_combination_stats(data)
         return {
             size: {'-'.join(map(str, combo)): count 
@@ -143,7 +164,8 @@ class HistoricalAnalyzer:
         return {
             'common_gaps': dict(sorted(gap_counts.items())),
             'overdue_numbers': overdue,
-            'avg_gap_size': sum(k*v for k,v in gap_counts.items())/sum(gap_counts.values())
+            'avg_gap_size': sum(k*v for k,v in gap_counts.items())/sum(gap_counts.values()),
+            'threshold': self.config['analysis']['gap_analysis']['threshold']
         }
     
     def _get_odd_even_stats(self, data):

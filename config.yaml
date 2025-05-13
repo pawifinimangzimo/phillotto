@@ -61,3 +61,39 @@ output:
   sets_to_generate: 4
   save_analysis: true
   verbose: true
+  
+ # Add this new section:
+ # Add this new section at the bottom:
+display:
+  # Core toggles
+  show_frequency: true
+  show_temperature: true
+  show_odd_even: true
+  show_sum_range: true
+  show_high_low: true
+  show_primes: true
+  show_gaps: true
+  show_combinations: false
+
+  # Section-specific settings  
+  frequency:
+    top_range: 10
+    min_frequency: 0
+    highlight_over: 50
+    
+  temperature:
+    max_hot_display: 15
+    show_warm: false
+    highlight_cold_over: 30
+    
+  primes:
+    highlight_over: 10
+    
+  gaps:
+    top_gaps_to_show: 10
+    highlight_overdue_over: 5
+    
+  combinations:
+    max_pairs: 5
+    max_triplets: 3
+    max_quads: 2
