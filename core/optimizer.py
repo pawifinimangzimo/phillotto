@@ -3,6 +3,7 @@ import random
 import sympy
 from collections import defaultdict
 from pathlib import Path
+import yaml
 
 class LotteryOptimizer:
     def __init__(self, config_path="config.yaml"):
@@ -30,7 +31,7 @@ class LotteryOptimizer:
             1 for n in self.number_pool
         ])
         
-        # Base weights
+        # Base weights (fixed parenthesis issue here)
         self.weights = (
             self.config['strategy']['frequency_weight'] * freq_weights +
             self.config['strategy']['recent_weight'] * recency_weights +
