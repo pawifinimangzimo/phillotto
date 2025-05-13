@@ -70,15 +70,15 @@ class HistoricalAnalyzer:
 
         except Exception as e:
         # Enhanced error context
-        raise ValueError(
-            f"Failed to load {self.config['data']['historical_path']}\n"
-            f"Error: {str(e)}\n"
-            f"File must be:\n"
-            f"- Comma-delimited\n"
-            f"- First column: dates\n"
-            f"- Second column: numbers as 1-2-3-4-5-6\n"
-            f"Example:\n01/01/2020,5-10-15-20-25-30"
-        )
+            raise ValueError(
+                f"Failed to load {self.config['data']['historical_path']}\n"
+                f"Error: {str(e)}\n"
+                f"File must be:\n"
+                f"- Comma-delimited\n"
+                f"- First column: dates\n"
+                f"- Second column: numbers as 1-2-3-4-5-6\n"
+                f"Example:\n01/01/2020,5-10-15-20-25-30"
+            )
 Debugging Steps:
 
 
