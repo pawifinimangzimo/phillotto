@@ -85,7 +85,7 @@ class LotteryOptimizer:
         )
         non_primes = random.sample(
             [n for n in self.number_pool if n not in self.prime_numbers],
-            self.config['strategy']['numbers_to_select'] - len(primes))
+            self.config['strategy']['numbers_to_select'] - (len(primes))
         )
         return sorted(primes + non_primes)
     
