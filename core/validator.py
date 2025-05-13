@@ -2,6 +2,7 @@ import pandas as pd
 from pathlib import Path
 from collections import defaultdict
 import yaml  # Added this import
+from .analysis import HistoricalAnalyzer
 
 class LotteryValidator:
     def __init__(self, config_path="config.yaml"):
