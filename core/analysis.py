@@ -5,6 +5,8 @@ from itertools import combinations
 import json
 from pathlib import Path
 import yaml
+import sympy
+from typing import Dict, List, Any
 
 class HistoricalAnalyzer:
     def __init__(self, config_path="config.yaml"):
@@ -45,9 +47,11 @@ class HistoricalAnalyzer:
             'frequency': self._get_frequency_stats(test_data),
             'temperature': self._get_temperature_stats(test_data),
             'combinations': self._get_serializable_combinations(test_data),
+            'primes': self._get_prime_stats(test_data),
             'gaps': self._get_gap_stats(test_data) if self.config['analysis']['gap_analysis']['enabled'] else None,
             'odd_even': self._get_odd_even_stats(test_data),
-            'sums': self._get_sum_stats(test_data)
+            'sums': self._get_sum_stats(test_data),
+            'high_low': self._get_high_low_stats(test_data)
         }
         
         self._save_report(stats)
@@ -55,8 +59,10 @@ class HistoricalAnalyzer:
     
     def _get_frequency_stats(self, data):
         freq = data[self.num_cols].stack().value_counts()
+        min_freq = self.config['analysis'].get('min_frequency', 0)
+        filtered = freq[freq >= min_freq]
         return {
-            'top': freq.head(self.config['analysis']['top_range']).to_dict(),
+            'top': filtered.head(self.config['analysis']['top_range']).to_dict(),
             'all': freq.to_dict()
         }
     
@@ -74,18 +80,31 @@ class HistoricalAnalyzer:
             'cold': [n for n,r in recency.items() if r > self.config['analysis']['recency_bins']['cold']]
         }
     
+    def _get_prime_stats(self, data):
+        primes = [n for n in self.number_pool if sympy.isprime(n)]
+        freq = self._get_frequency_stats(data)['all']
+        return {
+            'primes_in_pool': primes,
+            'prime_frequency': {p: freq.get(p, 0) for p in primes},
+            'prime_percentage': len(primes) / len(self.number_pool)
+        }
+    
+    def _get_high_low_stats(self, data):
+        low_max = self.config['strategy']['low_number_max']
+        return {
+            'low_numbers': [n for n in self.number_pool if n <= low_max],
+            'high_numbers': [n for n in self.number_pool if n > low_max],
+            'avg_low_per_draw': data[self.num_cols].apply(
+                lambda x: sum(1 for n in x if n <= low_max), axis=1).mean()
+        }
+    
     def _get_serializable_combinations(self, data):
-        """Convert tuple keys to strings for JSON serialization"""
         combo_data = self._get_combination_stats(data)
-        serializable = {}
-        
-        for size, combinations_dict in combo_data.items():
-            serializable[size] = {
-                '-'.join(map(str, combo)): count 
-                for combo, count in combinations_dict.items()
-            }
-        
-        return serializable
+        return {
+            size: {'-'.join(map(str, combo)): count 
+                  for combo, count in combinations_dict.items()}
+            for size, combinations_dict in combo_data.items()
+        }
     
     def _get_combination_stats(self, data):
         combo_data = defaultdict(int)
@@ -123,7 +142,8 @@ class HistoricalAnalyzer:
         
         return {
             'common_gaps': dict(sorted(gap_counts.items())),
-            'overdue_numbers': overdue
+            'overdue_numbers': overdue,
+            'avg_gap_size': sum(k*v for k,v in gap_counts.items())/sum(gap_counts.values())
         }
     
     def _get_odd_even_stats(self, data):
@@ -138,18 +158,20 @@ class HistoricalAnalyzer:
         return {
             'min': int(sums.min()),
             'max': int(sums.max()),
-            'mean': float(sums.mean())
+            'mean': float(sums.mean()),
+            'std_dev': float(sums.std())
         }
     
     def _save_report(self, stats):
-        """Convert numpy types to native Python types before saving"""
         def convert(o):
-            if isinstance(o, np.integer):
+            if isinstance(o, (np.integer, np.int64)):
                 return int(o)
-            elif isinstance(o, np.floating):
+            elif isinstance(o, (np.floating, np.float64)):
                 return float(o)
             elif isinstance(o, np.ndarray):
                 return o.tolist()
+            elif isinstance(o, pd.Timestamp):
+                return o.isoformat()
             raise TypeError(f"Object of type {type(o)} is not JSON serializable")
 
         Path(self.config['data']['stats_dir']).mkdir(parents=True, exist_ok=True)
