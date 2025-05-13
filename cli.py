@@ -6,6 +6,7 @@ from core.validator import LotteryValidator
 from pathlib import Path
 import json
 import sys
+from typing import List
 
 class NaturalOrderGroup(click.Group):
     """Preserve command order in help output"""
@@ -23,7 +24,6 @@ def cli(ctx, config):
     if ctx.invoked_subcommand is None:
         click.echo(ctx.get_help())
 
-# Analysis Command
 @cli.command(help="📊 Analyze historical draw patterns")
 @click.option('--test-draws', type=int, 
               help="🔢 Number of historical draws to analyze")
@@ -53,13 +53,85 @@ def analyze(test_draws, show_all, hide, save):
     
     # Display header
     click.secho("\n⚡ ANALYSIS REPORT ⚡", fg='blue', bold=True)
-    click.echo(f"Analyzed {stats['metadata']['draws_analyzed']} draws")
-    click.echo("="*50)
+    click.echo(f"Analyzed {stats['metadata']['draws_analyzed']} draws "
+              f"from {stats['metadata']['date_range']['start']} to {stats['metadata']['date_range']['end']}")
+    click.echo("="*60)
     
-    # Dynamic section display (same as previous version)
-    # ... [include all the analysis display code from earlier] ...
+    # Dynamic section display
+    sections = [
+        ('frequency', "🔢 NUMBER FREQUENCY", 'green'),
+        ('temperature', "🌡️ NUMBER TEMPERATURE", 'yellow'),
+        ('odd_even', "⚖️ ODD/EVEN BALANCE", 'magenta'),
+        ('sums', "🧮 SUM RANGE STATISTICS", 'cyan'),
+        ('high_low', "⬇️⬆️ HIGH/LOW DISTRIBUTION", 'blue'),
+        ('primes', "🔢 PRIME NUMBERS ANALYSIS", 'red'),
+        ('gaps', "📊 GAP ANALYSIS", 'white'),
+        ('combinations', "🃏 NUMBER COMBINATIONS", 'green')
+    ]
+    
+    for section, title, color in sections:
+        if not analyzer._should_display(section):
+            continue
+            
+        click.secho(f"\n{title}", fg=color, bold=True)
+        
+        if section == 'frequency':
+            freq = stats['frequency']
+            click.echo(f"Top {len(freq['top'])} numbers (min {freq['min_frequency']} appearances):")
+            for num, count in freq['top'].items():
+                if count >= analyzer.config['frequency']['highlight_over']:
+                    click.secho(f"  #{num}: {count} (Hot)", fg='yellow', bold=True)
+                else:
+                    click.echo(f"  #{num}: {count}")
+            
+            if freq['highlighted']:
+                click.secho("\n🌟 Frequently Drawn Numbers:", fg='yellow')
+                for num, count in sorted(freq['highlighted'].items(), key=lambda x: -x[1]):
+                    click.echo(f"  #{num}: {count} appearances")
+        
+        elif section == 'temperature':
+            temp = stats['temperature']
+            click.echo(f"Hot (last {analyzer.config['analysis']['recency_bins']['hot']} draws):")
+            click.echo("  " + ", ".join(map(str, temp['hot'][:15])))
+            if len(temp['hot']) > 15:
+                click.echo(f"  ...and {len(temp['hot'])-15} more")
+            
+            if temp['cold']:
+                click.echo(f"\nCold (> {analyzer.config['analysis']['recency_bins']['cold']} draws):")
+                click.echo("  " + ", ".join(map(str, temp['cold'])))
+        
+        elif section == 'primes':
+            primes = stats['primes']
+            click.echo(f"Prime numbers in pool ({primes['prime_percentage']:.1%}):")
+            for p in primes['primes_in_pool']:
+                freq = primes['prime_frequency'][p]
+                if freq >= analyzer.config['frequency']['highlight_over']:
+                    click.secho(f"  #{p}: {freq} (Hot)", fg='yellow')
+                else:
+                    click.echo(f"  #{p}: {freq}")
+        
+        elif section == 'gaps' and stats['gaps']:
+            gaps = stats['gaps']
+            click.echo("Most common gaps between numbers:")
+            for gap, count in sorted(gaps['common_gaps'].items(), key=lambda x: -x[1])[:10]:
+                click.echo(f"  {gap}: {count} times")
+            if gaps['overdue_numbers']:
+                click.secho("\n🚨 Overdue Numbers:", fg='red')
+                for num in gaps['overdue_numbers']:
+                    click.echo(f"  #{num}")
+        
+        elif section == 'combinations' and stats['combinations']:
+            for size, combos in stats['combinations'].items():
+                click.echo(f"\nTop {size}-number combinations:")
+                for combo, count in sorted(combos.items(), key=lambda x: -x[1])[:5]:
+                    click.echo(f"  {combo}: {count} occurrences")
+    
+    if save:
+        report_path = Path(analyzer.config['data']['stats_dir']) / 'analysis_report.json'
+        with open(report_path, 'w') as f:
+            json.dump(stats, f, indent=2)
+        click.secho(f"\n💾 Report saved to {report_path}", fg='green')
 
-# Generate Command (FULLY PRESERVED)
 @cli.command(help="🎲 Generate optimized number sets")
 @click.option('--sets', type=click.IntRange(1,100), default=4,
               show_default=True, help="🔢 Number of sets to generate")
@@ -91,7 +163,6 @@ def generate(sets, strategy, save):
                 f.write(f"{'-'.join(map(str, nums))}\n")
         click.secho(f"Saved to {save_path}", fg='green')
 
-# Validate Command (FULLY PRESERVED)
 @cli.command(help="✅ Validate generated sets")
 @click.option('--against-latest', is_flag=True,
               help="🆚 Compare against latest draw")
@@ -116,18 +187,58 @@ def validate(against_latest, test_draws, threshold):
             click.echo(f" (appeared {stats['frequency']} times)")
     else:
         opt = LotteryOptimizer()
+        analyzer = HistoricalAnalyzer()
         sets = opt.generate_sets()
         results = val.validate_sets(sets, test_draws)
+        freq_stats = analyzer._get_frequency_stats(analyzer.historical)
         
         click.secho(f"\nValidation Results (last {test_draws} draws):", fg='blue')
         for i, res in enumerate(results, 1):
             click.echo(f"\nSet {i}: {res['numbers']}")
+            
+            # Success rate
             success_color = 'green' if res['success_rate'] > 0.3 else 'yellow' if res['success_rate'] > 0.1 else 'red'
             click.echo(f"Success Rate ({threshold}+ matches): ", nl=False)
             click.secho(f"{res['success_rate']:.1%}", fg=success_color)
+            
+            # Match distribution
             click.echo("Match Distribution:")
             for matches, count in sorted(res['match_distribution'].items()):
                 click.echo(f"  {matches} matches: {count} times")
+            
+            # Number insights
+            click.echo("\nNumber Insights:")
+            for num in sorted(res['numbers']):
+                count = freq_stats['all'].get(num, 0)
+                if count >= analyzer.config['frequency']['highlight_over']:
+                    click.secho(f"  #{num}: {count} appearances (Hot)", fg='yellow')
+                elif count >= analyzer.config['frequency']['min_frequency']:
+                    click.echo(f"  #{num}: {count} appearances")
+                else:
+                    click.secho(f"  #{num}: {count} appearances (Rare)", fg='cyan')
+
+@cli.command(help="⚙️ Show current configuration")
+def config():
+    """Display current configuration"""
+    analyzer = HistoricalAnalyzer()
+    click.secho("\n⚙️ CURRENT CONFIGURATION", fg='blue', bold=True)
+    
+    # Frequency config
+    click.secho("\n🔢 Frequency Analysis:", fg='green')
+    click.echo(f"Top range: {analyzer.config['frequency']['top_range']}")
+    click.echo(f"Minimum frequency: {analyzer.config['frequency']['min_frequency']}")
+    click.echo(f"Highlight threshold: {analyzer.config['frequency']['highlight_over']}")
+    
+    # Temperature config
+    click.secho("\n🌡️ Temperature Settings:", fg='yellow')
+    click.echo(f"Hot threshold: ≤{analyzer.config['analysis']['recency_bins']['hot']} draws")
+    click.echo(f"Cold threshold: >{analyzer.config['analysis']['recency_bins']['cold']} draws")
+    
+    # Strategy config
+    click.secho("\n🎯 Generation Strategy:", fg='cyan')
+    click.echo(f"Numbers to select: {analyzer.config['strategy']['numbers_to_select']}")
+    click.echo(f"Number pool: 1-{analyzer.config['strategy']['number_pool']}")
+    click.echo(f"Low number cutoff: ≤{analyzer.config['strategy']['low_number_max']}")
 
 if __name__ == "__main__":
     try:
