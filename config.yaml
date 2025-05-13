@@ -73,7 +73,7 @@ display:
   show_high_low: true
   show_primes: true
   show_gaps: true
-  show_combinations: false
+  show_combinations: true
 
   # Section-specific settings  
   frequency:
