@@ -25,7 +25,6 @@ class HistoricalAnalyzer:
         self.num_cols = [f'n{i+1}' for i in range(num_select)]
         
         try:
-            # Read with explicit validation
             self.historical = pd.read_csv(
                 Path(self.config['data']['historical_path']),
                 header=None if not self.config['data']['has_header'] else 0,
@@ -34,21 +33,17 @@ class HistoricalAnalyzer:
                 on_bad_lines='error'
             )
             
-            # Date parsing with fallback
             self.historical['date'] = pd.to_datetime(
                 self.historical['date'],
                 format=self.config['data']['date_format'],
-                errors='coerce'
+                errors='raise'
             )
-            if self.historical['date'].isna().any():
-                raise ValueError("Date format mismatch")
             
-            # Process numbers
-            num_split = self.historical['numbers'].str.split('-', expand=True)
-            if num_split.shape[1] != len(self.num_cols):
-                raise ValueError(f"Expected {len(self.num_cols)} numbers per draw")
-            
-            self.historical[self.num_cols] = num_split.astype(int)
+            self.historical[self.num_cols] = (
+                self.historical['numbers']
+                .str.split('-', expand=True)
+                .astype(int)
+            )
             self.number_pool = list(range(1, self.config['strategy']['number_pool'] + 1))
             
         except Exception as e:
@@ -83,14 +78,15 @@ class HistoricalAnalyzer:
 
     def _get_frequency_stats(self, data: pd.DataFrame) -> Dict[str, Any]:
         freq = data[self.num_cols].stack().value_counts()
-        min_freq = self.config['frequency']['min_frequency']
-        highlight = self.config['frequency']['highlight_over']
-        filtered = freq[freq >= min_freq]
+        freq_config = self.config['display']['frequency']
         return {
-            'top': filtered.head(self.config['frequency']['top_range']).to_dict(),
+            'top': freq.head(freq_config['top_range']).to_dict(),
             'all': freq.to_dict(),
-            'min_frequency': min_freq,
-            'highlighted': {n: c for n, c in freq.items() if c >= highlight}
+            'min_frequency': freq_config['min_frequency'],
+            'highlighted': {
+                num: count for num, count in freq.items()
+                if count >= freq_config['highlight_over']
+            }
         }
 
     def _get_temperature_stats(self, data: pd.DataFrame) -> Dict[str, List[int]]:
