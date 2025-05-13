@@ -16,8 +16,7 @@ class HistoricalAnalyzer:
     
     def _load_config(self, config_path):
         with open(config_path, 'r') as f:
-            config = yaml.safe_load(f)
-        return config
+            return yaml.safe_load(f)
     
     def _load_data(self):
         num_select = self.config['strategy']['numbers_to_select']
@@ -45,7 +44,7 @@ class HistoricalAnalyzer:
         stats = {
             'frequency': self._get_frequency_stats(test_data),
             'temperature': self._get_temperature_stats(test_data),
-            'combinations': self._get_combination_stats(test_data),
+            'combinations': self._get_serializable_combinations(test_data),
             'gaps': self._get_gap_stats(test_data) if self.config['analysis']['gap_analysis']['enabled'] else None,
             'odd_even': self._get_odd_even_stats(test_data),
             'sums': self._get_sum_stats(test_data)
@@ -74,6 +73,19 @@ class HistoricalAnalyzer:
                     self.config['analysis']['recency_bins']['hot'] < r <= self.config['analysis']['recency_bins']['warm']],
             'cold': [n for n,r in recency.items() if r > self.config['analysis']['recency_bins']['cold']]
         }
+    
+    def _get_serializable_combinations(self, data):
+        """Convert tuple keys to strings for JSON serialization"""
+        combo_data = self._get_combination_stats(data)
+        serializable = {}
+        
+        for size, combinations_dict in combo_data.items():
+            serializable[size] = {
+                '-'.join(map(str, combo)): count 
+                for combo, count in combinations_dict.items()
+            }
+        
+        return serializable
     
     def _get_combination_stats(self, data):
         combo_data = defaultdict(int)
@@ -132,4 +144,4 @@ class HistoricalAnalyzer:
     def _save_report(self, stats):
         Path(self.config['data']['stats_dir']).mkdir(parents=True, exist_ok=True)
         with open(Path(self.config['data']['stats_dir']) / 'analysis_report.json', 'w') as f:
-            json.dump(stats, f, indent=2)
+            json.dump(stats, f, indent=2, default=str)
