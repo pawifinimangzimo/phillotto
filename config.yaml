@@ -12,20 +12,20 @@ data:
 strategy:
   number_pool: 55
   numbers_to_select: 6
-  frequency_weight: 0.4
-  recent_weight: 0.2
-  random_weight: 0.4
+  frequency_weight: 0.5
+  recent_weight: 0.3
+  random_weight: 0.2
   low_number_max: 10
   low_number_chance: 0.7
   high_prime_min: 35
   high_prime_chance: 0.25
-  cold_threshold: 50
-  resurgence_threshold: 3
-  gap_threshold: 1.5
+  cold_threshold: 30
+  resurgence_threshold: 2
+  gap_threshold: 1.1
 
 validation:
   mode: "none"
-  test_draws: 120
+  test_draws: 300
   alert_threshold: 4
   save_report: true
 
@@ -43,8 +43,8 @@ analysis:
   combination_analysis:
     pairs: true
     triplets: true
-    quadruplets: false
-    quintuplets: false
+    quadruplets: true
+    quintuplets: true
     sixtuplets: false
   min_combination_count: 2
   gap_analysis:
