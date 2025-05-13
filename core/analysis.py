@@ -142,6 +142,16 @@ class HistoricalAnalyzer:
         }
     
     def _save_report(self, stats):
+        """Convert numpy types to native Python types before saving"""
+        def convert(o):
+            if isinstance(o, np.integer):
+                return int(o)
+            elif isinstance(o, np.floating):
+                return float(o)
+            elif isinstance(o, np.ndarray):
+                return o.tolist()
+            raise TypeError(f"Object of type {type(o)} is not JSON serializable")
+
         Path(self.config['data']['stats_dir']).mkdir(parents=True, exist_ok=True)
         with open(Path(self.config['data']['stats_dir']) / 'analysis_report.json', 'w') as f:
-            json.dump(stats, f, indent=2, default=str)
+            json.dump(stats, f, indent=2, default=convert)

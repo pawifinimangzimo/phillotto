@@ -59,13 +59,14 @@ class LotteryOptimizer:
         raise ValueError("Failed to generate valid set after 1000 attempts")
     
     def _generate_weighted_random(self):
-        return sorted(np.random.choice(
+        numbers = np.random.choice(
             self.number_pool,
             size=self.config['strategy']['numbers_to_select'],
             replace=False,
             p=self.weights
-        ))
-    
+        )
+        return sorted(int(num) for num in numbers)
+        
     def _generate_high_low_mix(self):
         low_max = self.config['strategy']['low_number_max']
         low_nums = [n for n in self.number_pool if n <= low_max]
