@@ -50,7 +50,7 @@ def analyze(test_draws, show_gaps, save):
 def generate(sets, strategy, save):
     """Generate number sets"""
     opt = LotteryOptimizer()
-    num_sets = sets or opt.config['output']['sets_to_select']
+    num_sets = sets or opt.config['output']['sets_to_generate']
     
     strategies = {
         'weighted': opt._generate_weighted_random,
