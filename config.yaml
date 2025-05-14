@@ -1,99 +1,66 @@
+# Core lottery parameters
+lottery:
+  number_pool: 49
+  numbers_to_draw: 6
+  min_sum: 100
+  max_sum: 200
+
+# Data configuration
 data:
   historical_path: "data/historical.csv"
-  upcoming_path: ""
   latest_path: "data/latest_draw.csv"
   stats_dir: "data/stats/"
   results_dir: "data/results/"
-  merge_upcoming: true
-  archive_upcoming: true
   has_header: false
-  date_format: "%m/%d/%y"
+  date_format: "%Y-%m-%d"
 
-strategy:
-  number_pool: 55
-  numbers_to_select: 6
-  frequency_weight: 0.5
-  recent_weight: 0.3
-  random_weight: 0.2
-  low_number_max: 10
-  low_number_chance: 0.7
-  high_prime_min: 35
-  high_prime_chance: 0.25
-  cold_threshold: 30
-  resurgence_threshold: 2
-  gap_threshold: 1.1
-
-validation:
-  mode: "none"
-  test_draws: 300
-  alert_threshold: 4
-  save_report: true
-
+# Analysis configuration
 analysis:
-  default_match_threshold: 4
-  default_show_top: 5
-  min_display_matches: 1
-  recency_units: "draws"
-  recency_bins:
-    hot: 3
-    warm: 10
-    cold: 30
-  show_combined_stats: true
-  top_range: 10
-  combination_analysis:
-    pairs: true
-    triplets: true
-    quadruplets: true
-    quintuplets: true
-    sixtuplets: false
-  min_combination_count: 2
-  gap_analysis:
+  # Overdue numbers analysis (standard gaps)
+  overdue:
     enabled: true
-    threshold: 5
-  odd_even:
-    min_odds: 2
-    max_odds: 4
-  sum_range:
-    min: 100
-    max: 200
-
-output:
-  sets_to_generate: 4
-  save_analysis: true
-  verbose: true
+    threshold: 25
+    highlight_cold: true
+    cold_threshold: 30
   
- # Add this new section:
- # Add this new section at the bottom:
-display:
-  # Core toggles
-  show_frequency: true
-  show_temperature: true
-  show_odd_even: true
-  show_sum_range: true
-  show_high_low: true
-  show_primes: true
-  show_gaps: true
-  show_combinations: true
-
-  # Section-specific settings  
-  frequency:
-    top_range: 10
-    min_frequency: 0
-    highlight_over: 50
-    
-  temperature:
-    max_hot_display: 15
-    show_warm: false
-    highlight_cold_over: 30
-    
+  # Inter-number gap analysis
+  inter_number_gaps:
+    enabled: true
+    max_avg: 12.0
+    max_single: 20
+    min_variety: 3
+  
+  # Number properties
   primes:
-    highlight_over: 10
-    
+    enabled: true
+    min_primes: 1
+  even_odd:
+    enabled: true
+    target_ratio: 0.5
+    tolerance: 0.2
+
+# Generation rules
+generation:
+  gap_constraints:
+    overdue:
+      enabled: true
+      min_include: 1
+      max_include: 3
+    inter_number:
+      enabled: true
+      max_avg_gap: 10.0
+      max_single_gap: 15
+  strategies:
+    - weighted
+    - balanced
+    - random
+
+# Display settings
+display:
+  show_gap_analysis: true
   gaps:
-    top_gaps_to_show: 10
-    highlight_overdue_over: 5
-    
-  combinations:
-    max_pairs: 5
-    max_triplets: 3
-    max_quads: 2
+    highlight_large: true
+    large_threshold: 15
+  overdue:
+    show_all: false
+    max_display: 5
