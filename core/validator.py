@@ -9,7 +9,7 @@ from .analysis import HistoricalAnalyzer
 
 class LotteryValidator:
     def __init__(self, config_path: str = "config.yaml") -> None:
-        """Initialize validator with configuration."""
+        """Initialize validator with configuration and data checks."""
         self.config = self._load_config(config_path)
         self.analyzer = HistoricalAnalyzer(config_path)
         self._validate_initial_data()
@@ -25,7 +25,6 @@ class LotteryValidator:
         
         if not config.get('data'):
             raise ValueError("Invalid config: Missing 'data' section")
-            
         return config
 
     def _validate_initial_data(self) -> None:
@@ -34,16 +33,12 @@ class LotteryValidator:
             Path(self.config['data']['historical_path']),
             Path(self.config['data']['latest_path'])
         ]
-        
         for file in required_files:
             if not file.exists():
-                raise FileNotFoundError(
-                    f"Required data file not found: {file}\n"
-                    f"Create the file or update config.yaml"
-                )
+                raise FileNotFoundError(f"Required data file not found: {file}")
 
     def validate_sets(self, sets: List[List[int]], test_draws: Optional[int] = None) -> List[Dict]:
-        """Validate generated number sets against historical data."""
+        """Validate generated number sets against historical draws."""
         test_draws = test_draws or self.config['validation']['test_draws']
         test_data = self.analyzer.historical.iloc[-test_draws:]
         
@@ -52,22 +47,13 @@ class LotteryValidator:
 
         results = []
         for numbers in sets:
-            # Convert and validate input numbers
-            try:
-                clean_numbers = [int(num) for num in numbers]
-                if len(clean_numbers) != self.config['strategy']['numbers_to_select']:
-                    raise ValueError("Invalid numbers count")
-            except (ValueError, TypeError) as e:
-                raise ValueError(f"Invalid number format: {e}")
-
-            # Calculate matches
+            clean_numbers = [int(num) for num in numbers]
             matches = []
+            
             for _, draw in test_data.iterrows():
                 draw_numbers = [draw[f'n{i+1}'] for i in range(self.config['strategy']['numbers_to_select'])]
-                match = len(set(clean_numbers) & set(draw_numbers))
-                matches.append(match)
+                matches.append(len(set(clean_numbers) & set(draw_numbers)))
 
-            # Build result
             results.append({
                 'numbers': clean_numbers,
                 'match_distribution': self._count_matches(matches),
@@ -76,7 +62,6 @@ class LotteryValidator:
                     self.config['validation']['alert_threshold']
                 )
             })
-        
         return results
 
     def _count_matches(self, matches: List[int]) -> Dict[int, int]:
@@ -84,24 +69,34 @@ class LotteryValidator:
         distribution = defaultdict(int)
         for count in matches:
             distribution[count] += 1
-        return dict(sorted(distribution.items())
+        return dict(sorted(distribution.items()))
 
     def _calculate_success_rate(self, matches: List[int], threshold: int) -> float:
-        """Calculate percentage of draws meeting threshold."""
+        """
+        Calculate percentage of draws meeting or exceeding threshold.
+        
+        Args:
+            matches: List of match counts (e.g., [3, 4, 2])
+            threshold: Minimum matches to consider successful
+            
+        Returns:
+            Success rate between 0.0 and 1.0
+        """
+        if not matches:
+            return 0.0
         successful = sum(1 for m in matches if m >= threshold)
-        return successful / len(matches) if matches else 0.0
+        return successful / len(matches)
 
     def check_latest_draw(self) -> Optional[Dict]:
-        """Analyze numbers from the latest draw with robust validation."""
+        """Analyze numbers from the latest draw."""
         latest_path = Path(self.config['data']['latest_path'])
-        
         if not latest_path.exists():
             raise FileNotFoundError(f"Latest draw file not found at {latest_path}")
 
         try:
             latest = pd.read_csv(
                 latest_path,
-                header=None,
+                header=None if not self.config['data']['has_header'] else 0,
                 names=['date', 'numbers'],
                 dtype={'date': str, 'numbers': str},
                 on_bad_lines='error'
@@ -110,27 +105,19 @@ class LotteryValidator:
             if latest.empty:
                 raise ValueError("Latest draw file is empty")
 
-            # Extract and validate numbers
             latest_numbers = [int(n) for n in latest.iloc[0]['numbers'].split('-')]
-            if len(latest_numbers) != self.config['strategy']['numbers_to_select']:
-                raise ValueError("Invalid numbers count in latest draw")
-
-            # Get analysis data
-            temp_stats = self.analyzer._get_temperature_stats(self.analyzer.historical)
-            freq_stats = self.analyzer._get_frequency_stats(self.analyzer.historical)['all']
             
             return {
                 'numbers': sorted(latest_numbers),
                 'analysis': {
                     num: {
-                        'status': 'hot' if num in temp_stats['hot'] else 
-                                 'cold' if num in temp_stats['cold'] else 'neutral',
-                        'frequency': int(freq_stats.get(num, 0))
+                        'status': 'hot' if num in self.analyzer._get_temperature_stats(self.analyzer.historical)['hot'] else 
+                                 'cold' if num in self.analyzer._get_temperature_stats(self.analyzer.historical)['cold'] else 'neutral',
+                        'frequency': int(self.analyzer._get_frequency_stats(self.analyzer.historical)['all'].get(num, 0))
                     }
                     for num in latest_numbers
                 }
             }
-
         except Exception as e:
             raise ValueError(f"Failed to parse latest draw: {str(e)}")
 
@@ -163,7 +150,6 @@ class LotteryValidator:
                     if n != num
                 ]))
             })
-
         return report
 
     def save_validation_report(self, results: List[Dict], filename: str = "validation_report.json") -> Path:
@@ -182,5 +168,4 @@ class LotteryValidator:
 
         with open(report_path, 'w') as f:
             json.dump(results, f, indent=2, default=serialize)
-            
         return report_path
