@@ -1,106 +1,106 @@
-import numpy as np
 import random
-import sympy
-from collections import defaultdict
+import numpy as np
+from typing import List
 from pathlib import Path
 import yaml
-from .analysis import HistoricalAnalyzer  # Added this import
+from .analysis import HistoricalAnalyzer
+from .validator import LotteryValidator
 
 class LotteryOptimizer:
-    def __init__(self, config_path="config.yaml"):
+    def __init__(self, config_path: str):
         self.config = self._load_config(config_path)
         self.analyzer = HistoricalAnalyzer(config_path)
-        self.number_pool = list(range(1, self.config['strategy']['number_pool'] + 1))
-        self.prime_numbers = [n for n in self.number_pool if sympy.isprime(n)]
-        self.weights = None
-        self._calculate_weights()
-    
-    def _load_config(self, config_path):
+        self.validator = LotteryValidator(config_path)
+        self.number_pool = list(range(1, self.config['lottery']['number_pool'] + 1))
+
+    def _load_config(self, config_path: str) -> Dict:
         with open(config_path, 'r') as f:
             return yaml.safe_load(f)
-    
-    def _calculate_weights(self):
-        # Frequency weights
-        freq = self.analyzer._get_frequency_stats(self.analyzer.historical)['all']
-        freq_weights = np.array([freq.get(n, 0) for n in self.number_pool])
-        
-        # Recency weights
-        temp = self.analyzer._get_temperature_stats(self.analyzer.historical)
-        recency_weights = np.array([
-            3 if n in temp['hot'] else
-            2 if n in temp['warm'] else
-            1 for n in self.number_pool
-        ])
-        
-        # Base weights
-        self.weights = (
-            self.config['strategy']['frequency_weight'] * freq_weights +
-            self.config['strategy']['recent_weight'] * recency_weights +
-            self.config['strategy']['random_weight'] * np.random.rand(len(self.number_pool))
-        )
-        self.weights /= self.weights.sum()
-    
-    def generate_sets(self, n_sets=None):
-        n_sets = n_sets or self.config['output']['sets_to_generate']
-        return [self.generate_valid_set() for _ in range(n_sets)]
-    
-    def generate_valid_set(self):
+
+    def generate_set(self, max_attempts: int = 1000) -> List[int]:
+        """Generate numbers with all constraints"""
         strategies = [
-            self._generate_weighted_random,
-            self._generate_high_low_mix,
-            self._generate_prime_balanced
+            self._generate_weighted,
+            self._generate_balanced,
+            self._generate_random
         ]
         
-        for _ in range(1000):
-            nums = random.choice(strategies)()
-            if (self._enforce_odd_even_balance(nums) and 
-                self._validate_sum_range(nums)):
-                return nums
-        raise ValueError("Failed to generate valid set after 1000 attempts")
-    
-    def _generate_weighted_random(self):
-        numbers = np.random.choice(
-            self.number_pool,
-            size=self.config['strategy']['numbers_to_select'],
-            replace=False,
-            p=self.weights
-        )
-        return sorted(int(num) for num in numbers)
+        for attempt in range(max_attempts):
+            numbers = random.choice(strategies)()
+            if self.validator.validate_draw(numbers)['is_valid']:
+                return sorted(numbers)
+                
+        raise ValueError(f"Failed to generate valid set after {max_attempts} attempts")
+
+    def _generate_weighted(self) -> List[int]:
+        """Weighted by frequency and gap properties"""
+        weights = np.ones(len(self.number_pool))
+        freq = self._get_frequency_weights()
+        overdue = self.analyzer.get_overdue_numbers()
         
-    def _generate_high_low_mix(self):
-        low_max = self.config['strategy']['low_number_max']
-        low_nums = [n for n in self.number_pool if n <= low_max]
-        high_nums = [n for n in self.number_pool if n > low_max]
+        for i, num in enumerate(self.number_pool):
+            # Frequency weighting
+            weights[i] *= freq.get(num, 1.0)
+            
+            # Overdue boost
+            if num in overdue:
+                weights[i] *= 1.5
+                
+            # Gap penalty
+            for n in self.number_pool:
+                if abs(num - n) > self.config['generation']['gap_constraints']['inter_number']['max_single_gap']:
+                    weights[i] *= 0.7
+                    
+        return random.choices(
+            population=self.number_pool,
+            weights=weights,
+            k=self.config['lottery']['numbers_to_draw']
+        )
+
+    def _generate_balanced(self) -> List[int]:
+        """Balanced gap distribution approach"""
+        # Start with overdue numbers
+        overdue = list(self.analyzer.get_overdue_numbers().keys())
+        selected = random.sample(
+            overdue,
+            k=random.randint(
+                self.config['generation']['gap_constraints']['overdue']['min_include'],
+                self.config['generation']['gap_constraints']['overdue']['max_include']
+            )
+        )
         
-        split = max(1, self.config['strategy']['numbers_to_select'] // 2)
-        selected = (
-            random.sample(low_nums, split) +
-            random.sample(high_nums, self.config['strategy']['numbers_to_select'] - split)
-        )
-        return sorted(selected)
-    
-    def _generate_prime_balanced(self):
-        num_primes = random.choice([1, 2])  # 1-2 primes per set
-        primes = random.sample(
-            [n for n in self.prime_numbers if n > self.config['strategy']['high_prime_min']],
-            min(num_primes, len(self.prime_numbers))
-        )
-        non_primes = random.sample(
-            [n for n in self.number_pool if n not in self.prime_numbers],
-            self.config['strategy']['numbers_to_select'] - len(primes)
-        )
-        return sorted(primes + non_primes)
-    
-    def _enforce_odd_even_balance(self, numbers):
-        odds = sum(1 for n in numbers if n % 2 == 1)
-        return (
-            self.config['analysis']['odd_even']['min_odds'] <= odds <= 
-            self.config['analysis']['odd_even']['max_odds']
-        )
-    
-    def _validate_sum_range(self, numbers):
-        total = sum(numbers)
-        return (
-            self.config['analysis']['sum_range']['min'] <= total <= 
-            self.config['analysis']['sum_range']['max']
-        )
+        # Fill remaining with gap-balancing numbers
+        while len(selected) < self.config['lottery']['numbers_to_draw']:
+            candidates = [n for n in self.number_pool if n not in selected]
+            next_num = min(
+                candidates,
+                key=lambda x: self._calculate_gap_score(selected + [x])
+            )
+            selected.append(next_num)
+            
+        return selected
+
+    def _calculate_gap_score(self, numbers: List[int]) -> float:
+        """Score based on gap distribution (lower is better)"""
+        gaps = self.analyzer.analyze_inter_number_gaps(numbers)
+        cfg = self.config['generation']['gap_constraints']['inter_number']
+        
+        score = 0
+        if gaps['average'] > cfg['max_avg_gap']:
+            score += (gaps['average'] - cfg['max_avg_gap']) * 10
+        if gaps['max'] > cfg['max_single_gap']:
+            score += (gaps['max'] - cfg['max_single_gap']) * 20
+        return score
+
+    def _get_frequency_weights(self) -> Dict[int, float]:
+        """Get frequency-based weights for all numbers"""
+        freq = defaultdict(int)
+        for _, row in self.analyzer.historical.iterrows():
+            for num in row[self.analyzer.num_cols]:
+                freq[num] += 1
+        max_freq = max(freq.values()) if freq else 1
+        return {num: count/max_freq for num, count in freq.items()}
+
+    def _generate_random(self) -> List[int]:
+        """Fallback random generation"""
+        return random.sample(self.number_pool, k=self.config['lottery']['numbers_to_draw'])
