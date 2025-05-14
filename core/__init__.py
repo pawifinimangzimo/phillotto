@@ -1,7 +1,7 @@
 # core/__init__.py
-from .analysis import HistoricalAnalyzer
-from .optimizer import LotteryOptimizer
-from .validator import LotteryValidator
+from analysis import HistoricalAnalyzer
+from optimizer import LotteryOptimizer
+from validator import LotteryValidator
 
 __all__ = ['HistoricalAnalyzer', 'LotteryOptimizer', 'LotteryValidator']
 __version__ = "1.0.0"
