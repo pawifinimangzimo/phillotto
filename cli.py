@@ -2,9 +2,9 @@ import click
 import yaml
 from pathlib import Path
 from typing import List
-from .analysis import HistoricalAnalyzer
-from .optimizer import LotteryOptimizer
-from .validator import LotteryValidator
+from core.analysis import HistoricalAnalyzer
+from core.optimizer import LotteryOptimizer
+from core.validator import LotteryValidator
 
 @click.group()
 @click.option('--config', default='config.yaml', help='Path to config file')
